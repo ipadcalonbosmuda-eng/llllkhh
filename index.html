@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Checker 9500 CARV — CARV + WETH → CARV-eq + USD</title>
+<title>Checker 9500 CARV — CARV/USDC Pair</title>
 <style>
   :root { --bg:#0b0f13; --card:#141a21; --text:#e8eef6; --muted:#9db0c2; --accent:#4fd1c5; --bad:#ff7878; --good:#8be28b;}
   *{box-sizing:border-box}
@@ -37,7 +37,7 @@
 <body>
 <header>
   <h1>Checker 9500 CARV</h1>
-  <div class="small">Konversi <b>WETH → CARV</b> pakai harga live, cek apakah total sudah ≥ <b>9.500 CARV</b>, dan hitung surplus/defisit dalam <b>USD/USDT</b>.</div>
+  <div class="small">Pair CARV/USDC — Konversi langsung ke USD dan cek apakah sudah mencapai target 9.500 CARV.</div>
 </header>
 
 <main>
@@ -47,10 +47,6 @@
       <div>
         <label>CARV yang kamu punya (CARV)</label>
         <input id="tokenNow" value="0" />
-      </div>
-      <div>
-        <label>WETH yang kamu punya (ETH)</label>
-        <input id="wethNow" value="0" />
       </div>
       <div>
         <label>Target CARV</label>
@@ -63,7 +59,7 @@
     <h2>2) Sumber Harga</h2>
     <div class="grid">
       <div>
-        <label>DexScreener Pair URL (CARV/WETH — Base)</label>
+        <label>DexScreener Pair URL (CARV/USDC)</label>
         <input id="pairUrl" value="https://dexscreener.com/base/0xff862675c47b6a2c9072dcbe2f37a78a445c4f37" />
       </div>
       <div>
@@ -80,11 +76,9 @@
   <div class="card">
     <h2>3) Ringkasan</h2>
     <div class="kpi">
-      <div class="item"><div class="label">Harga ETH (USD)</div><div class="value" id="kpiEth">$ –</div></div>
       <div class="item"><div class="label">Harga CARV (USD)</div><div class="value" id="kpiToken">$ –</div></div>
-      <div class="item"><div class="label">1 ETH =</div><div class="value" id="kpiZpe">– CARV</div></div>
-      <div class="item"><div class="label">WETH → CARV (ekuivalen)</div><div class="value" id="kpiWethToken">– CARV</div></div>
-      <div class="item"><div class="label">Total CARV-eq (CARV + WETH→CARV)</div><div class="value" id="kpiTotalToken">– CARV</div></div>
+      <div class="item"><div class="label">Total CARV</div><div class="value" id="kpiTotalToken">– CARV</div></div>
+      <div class="item"><div class="label">Total USD</div><div class="value" id="kpiTotalUsd">$ –</div></div>
       <div class="item"><div class="label">Status vs Target</div><div class="value" id="kpiStatus">–</div></div>
     </div>
   </div>
@@ -95,7 +89,7 @@
       <thead>
         <tr>
           <th>Tipe</th>
-          <th>Jumlah (CARV-eq)</th>
+          <th>Jumlah (CARV)</th>
           <th>Nilai (USD/USDT)</th>
         </tr>
       </thead>
@@ -121,13 +115,6 @@ function parseFlex(v){ v=String(v??'').trim().replace(/\s/g,'').replace(',', '.'
 function fmt(n,d=6){ if(!isFinite(n)) return '–'; return Number(n).toLocaleString(undefined,{maximumFractionDigits:d}); }
 function setStatus(s){ $('status').textContent=s; }
 
-async function fetchEthUsd(){
-  try{
-    const r = await fetch('https://api.binance.com/api/v3/ticker/price?symbol=ETHUSDT',{cache:'no-store'});
-    const j = await r.json(); const px = Number(j.price);
-    if(!isFinite(px)) throw new Error(); return px;
-  }catch(e){ setStatus('ETH fetch fail'); return NaN; }
-}
 async function fetchTokenUsd(){
   try{
     const url = $('pairUrl').value.trim();
@@ -140,23 +127,16 @@ async function fetchTokenUsd(){
   }catch(e){ setStatus('Token fetch fail'); return NaN; }
 }
 
-function recalc(ethUsd, tokenUsd){
+function recalc(tokenUsd){
   const tokenNow = parseFlex($('tokenNow').value);
-  const wethNow  = parseFlex($('wethNow').value);
-  const target   = parseFlex($('targetToken').value);
-  if(![ethUsd,tokenUsd,tokenNow,wethNow,target].every(isFinite)) return;
+  const target = parseFlex($('targetToken').value);
+  if(![tokenUsd,tokenNow,target].every(isFinite)) return;
 
-  const tokenPerEth = ethUsd / tokenUsd;
-  const wethToToken = wethNow * tokenPerEth;
-  const totalTokenEq = tokenNow + wethToToken;
-
-  $('kpiEth').textContent  = '$ ' + fmt(ethUsd,2);
   $('kpiToken').textContent = '$ ' + fmt(tokenUsd,6);
-  $('kpiZpe').textContent  = fmt(tokenPerEth) + ' CARV';
-  $('kpiWethToken').textContent = fmt(wethToToken) + ' CARV';
-  $('kpiTotalToken').textContent = fmt(totalTokenEq) + ' CARV';
+  $('kpiTotalToken').textContent = fmt(tokenNow) + ' CARV';
+  $('kpiTotalUsd').textContent = '$ ' + fmt(tokenNow * tokenUsd,2);
 
-  const diff = totalTokenEq - target;
+  const diff = tokenNow - target;
   if(diff >= 0){
     $('kpiStatus').textContent = '✅ CUKUP (≥ target)';
     $('kpiStatus').className = 'value ok';
@@ -177,10 +157,10 @@ function recalc(ethUsd, tokenUsd){
 
 async function refreshNow(){
   setStatus('Fetching…');
-  const [eth, token] = await Promise.all([fetchEthUsd(), fetchTokenUsd()]);
-  if(isFinite(eth) && isFinite(token)){
+  const token = await fetchTokenUsd();
+  if(isFinite(token)){
     setStatus('Live OK');
-    recalc(eth, token);
+    recalc(token);
   }else setStatus('Fetch fail');
 }
 $('refresh').addEventListener('click', refreshNow);
@@ -192,7 +172,7 @@ function startAuto(){
   timer = setInterval(refreshNow, sec*1000);
 }
 $('intervalSec').addEventListener('input', startAuto);
-['tokenNow','wethNow','targetToken'].forEach(id=>$(id).addEventListener('input', refreshNow));
+['tokenNow','targetToken'].forEach(id=>$(id).addEventListener('input', refreshNow));
 refreshNow();
 startAuto();
 </script>
