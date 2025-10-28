@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Checker 9500 CARV — CARV/USDC Pair</title>
+<title>Checker 9500 CARV — CARV + USDC → CARV-eq + USD</title>
 <style>
   :root { --bg:#0b0f13; --card:#141a21; --text:#e8eef6; --muted:#9db0c2; --accent:#4fd1c5; --bad:#ff7878; --good:#8be28b;}
   *{box-sizing:border-box}
@@ -37,7 +37,9 @@
 <body>
 <header>
   <h1>Checker 9500 CARV</h1>
-  <div class="small">Pair CARV/USDC — Konversi langsung ke USD dan cek apakah sudah mencapai target 9.500 CARV.</div>
+  <div class="small">
+    Pair <b>CARV/USDC</b> — Hitung apakah <b>CARV + (USDC→CARV)</b> sudah mencapai target <b>9.500 CARV</b> dan berapa surplus/defisit dalam <b>CARV</b> & <b>USD/USDT</b>.
+  </div>
 </header>
 
 <main>
@@ -46,13 +48,18 @@
     <div class="grid">
       <div>
         <label>CARV yang kamu punya (CARV)</label>
-        <input id="tokenNow" value="0" />
+        <input id="carvNow" value="0" />
+      </div>
+      <div>
+        <label>USDC yang kamu punya (USDC)</label>
+        <input id="usdcNow" value="0" />
       </div>
       <div>
         <label>Target CARV</label>
-        <input id="targetToken" value="9500" />
+        <input id="targetCarv" value="9500" />
       </div>
     </div>
+    <div class="small" style="margin-top:6px">Asumsi USDC ≈ $1.</div>
   </div>
 
   <div class="card">
@@ -76,9 +83,9 @@
   <div class="card">
     <h2>3) Ringkasan</h2>
     <div class="kpi">
-      <div class="item"><div class="label">Harga CARV (USD)</div><div class="value" id="kpiToken">$ –</div></div>
-      <div class="item"><div class="label">Total CARV</div><div class="value" id="kpiTotalToken">– CARV</div></div>
-      <div class="item"><div class="label">Total USD</div><div class="value" id="kpiTotalUsd">$ –</div></div>
+      <div class="item"><div class="label">Harga CARV (USD)</div><div class="value" id="kpiPrice">$ –</div></div>
+      <div class="item"><div class="label">USDC → CARV (ekuivalen)</div><div class="value" id="kpiUsdcToCarv">– CARV</div></div>
+      <div class="item"><div class="label">Total CARV-eq (CARV + USDC→CARV)</div><div class="value" id="kpiTotalCarv">– CARV</div></div>
       <div class="item"><div class="label">Status vs Target</div><div class="value" id="kpiStatus">–</div></div>
     </div>
   </div>
@@ -96,12 +103,12 @@
       <tbody>
         <tr class="cardrow">
           <td>Surplus (jika total ≥ target)</td>
-          <td id="tdSurplusToken">–</td>
+          <td id="tdSurplusCarv">–</td>
           <td id="tdSurplusUsd">$ –</td>
         </tr>
         <tr class="cardrow">
           <td>Defisit / Kekurangan (jika total &lt; target)</td>
-          <td id="tdDeficitToken">–</td>
+          <td id="tdDeficitCarv">–</td>
           <td id="tdDeficitUsd">$ –</td>
         </tr>
       </tbody>
@@ -115,56 +122,61 @@ function parseFlex(v){ v=String(v??'').trim().replace(/\s/g,'').replace(',', '.'
 function fmt(n,d=6){ if(!isFinite(n)) return '–'; return Number(n).toLocaleString(undefined,{maximumFractionDigits:d}); }
 function setStatus(s){ $('status').textContent=s; }
 
-async function fetchTokenUsd(){
+async function fetchCarvUsd(){
   try{
     const url = $('pairUrl').value.trim();
     const u = new URL(url);
     const [chain,pair] = u.pathname.split('/').filter(Boolean);
     const r = await fetch(`https://api.dexscreener.com/latest/dex/pairs/${chain}/${pair}`, {cache:'no-store'});
-    const j = await r.json(); const px = Number(j?.pair?.priceUsd);
+    const j = await r.json();
+    const px = Number(j?.pair?.priceUsd);   // Harga CARV (USD)
     if(isFinite(px)) return px;
     throw new Error();
-  }catch(e){ setStatus('Token fetch fail'); return NaN; }
+  }catch(e){ setStatus('Fetch harga gagal'); return NaN; }
 }
 
-function recalc(tokenUsd){
-  const tokenNow = parseFlex($('tokenNow').value);
-  const target = parseFlex($('targetToken').value);
-  if(![tokenUsd,tokenNow,target].every(isFinite)) return;
+function recalc(carvUsd){
+  const carvNow   = parseFlex($('carvNow').value);
+  const usdcNow   = parseFlex($('usdcNow').value);
+  const target    = parseFlex($('targetCarv').value);
+  if(![carvUsd,carvNow,usdcNow,target].every(isFinite)) return;
 
-  $('kpiToken').textContent = '$ ' + fmt(tokenUsd,6);
-  $('kpiTotalToken').textContent = fmt(tokenNow) + ' CARV';
-  $('kpiTotalUsd').textContent = '$ ' + fmt(tokenNow * tokenUsd,2);
+  $('kpiPrice').textContent = '$ ' + fmt(carvUsd,6);
 
-  const diff = tokenNow - target;
+  const usdcToCarv = usdcNow / carvUsd;               // $ / ($/CARV)
+  const totalCarvEq = carvNow + usdcToCarv;
+
+  $('kpiUsdcToCarv').textContent = fmt(usdcToCarv) + ' CARV';
+  $('kpiTotalCarv').textContent  = fmt(totalCarvEq) + ' CARV';
+
+  const diff = totalCarvEq - target;
   if(diff >= 0){
     $('kpiStatus').textContent = '✅ CUKUP (≥ target)';
     $('kpiStatus').className = 'value ok';
-    $('tdSurplusToken').textContent = fmt(diff) + ' CARV';
-    $('tdSurplusUsd').textContent  = '$ ' + fmt(diff * tokenUsd, 2);
-    $('tdDeficitToken').textContent = '–';
+    $('tdSurplusCarv').textContent = fmt(diff) + ' CARV';
+    $('tdSurplusUsd').textContent  = '$ ' + fmt(diff * carvUsd, 2);
+    $('tdDeficitCarv').textContent = '–';
     $('tdDeficitUsd').textContent  = '$ –';
   }else{
     $('kpiStatus').textContent = '❌ KURANG (< target)';
     $('kpiStatus').className = 'value warn';
     const need = Math.abs(diff);
-    $('tdSurplusToken').textContent = '–';
+    $('tdSurplusCarv').textContent = '–';
     $('tdSurplusUsd').textContent  = '$ –';
-    $('tdDeficitToken').textContent = fmt(need) + ' CARV';
-    $('tdDeficitUsd').textContent  = '$ ' + fmt(need * tokenUsd, 2);
+    $('tdDeficitCarv').textContent = fmt(need) + ' CARV';
+    $('tdDeficitUsd').textContent  = '$ ' + fmt(need * carvUsd, 2);
   }
 }
 
 async function refreshNow(){
   setStatus('Fetching…');
-  const token = await fetchTokenUsd();
-  if(isFinite(token)){
-    setStatus('Live OK');
-    recalc(token);
-  }else setStatus('Fetch fail');
+  const price = await fetchCarvUsd();
+  if(isFinite(price)){ setStatus('Live OK'); recalc(price); }
+  else setStatus('Fetch fail');
 }
 $('refresh').addEventListener('click', refreshNow);
 
+// Auto-refresh dan re-calc saat input berubah
 let timer=null;
 function startAuto(){
   if(timer) clearInterval(timer);
@@ -172,7 +184,9 @@ function startAuto(){
   timer = setInterval(refreshNow, sec*1000);
 }
 $('intervalSec').addEventListener('input', startAuto);
-['tokenNow','targetToken'].forEach(id=>$(id).addEventListener('input', refreshNow));
+['carvNow','usdcNow','targetCarv'].forEach(id=>$(id).addEventListener('input', refreshNow));
+
+// Init
 refreshNow();
 startAuto();
 </script>
