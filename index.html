@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Checker 9500 CARV — CARV + WETH → CARV-eq + USD</title>
+<style>
+  :root { --bg:#0b0f13; --card:#141a21; --text:#e8eef6; --muted:#9db0c2; --accent:#4fd1c5; --bad:#ff7878; --good:#8be28b;}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text)}
+  header{padding:18px 20px;text-align:center;border-bottom:1px solid #1e2630;background:linear-gradient(180deg,#0f141a,#0b0f13)}
+  main{max-width:980px;margin:22px auto;padding:0 14px 60px}
+  h1{margin:0;font-size:20px}
+  h2{font-size:15px;margin:0 0 10px;color:var(--muted);font-weight:700}
+  .card{background:var(--card);border:1px solid #1f2933;border-radius:14px;padding:16px;margin:12px 0;box-shadow:0 10px 30px rgba(0,0,0,.25)}
+  label{display:block;font-size:12px;color:var(--muted);margin:8px 0 6px}
+  input{width:100%;padding:11px;border-radius:10px;background:#0d1217;border:1px solid #243140;color:var(--text);font-size:14px}
+  input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(79,209,197,.12)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  .btn{cursor:pointer;background:var(--accent);color:#052b27;border:0;border-radius:10px;padding:10px 14px;font-weight:700}
+  .pill{display:inline-block;padding:6px 10px;border-radius:999px;background:#0f171f;border:1px solid #223041;color:var(--muted);font-size:12px}
+  .kpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:8px}
+  .kpi .item{background:#0f141a;border:1px solid #1f2a35;border-radius:12px;padding:14px}
+  .kpi .label{font-size:12px;color:var(--muted)}
+  .kpi .value{font-size:22px;margin-top:6px}
+  .ok{color:var(--good)} .warn{color:var(--bad)}
+  table{width:100%;border-collapse:separate;border-spacing:0 10px}
+  th, td{padding:12px 14px;text-align:left}
+  th{color:var(--muted);font-weight:600}
+  tr.cardrow{background:#0f141a;border:1px solid #1f2a35}
+  tr.cardrow td:first-child{border-top-left-radius:10px;border-bottom-left-radius:10px}
+  tr.cardrow td:last-child{border-top-right-radius:10px;border-bottom-right-radius:10px}
+  .small{color:var(--muted);font-size:12px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Checker 9500 CARV</h1>
+  <div class="small">Konversi <b>WETH → CARV</b> pakai harga live, cek apakah total sudah ≥ <b>9.500 CARV</b>, dan hitung surplus/defisit dalam <b>USD/USDT</b>.</div>
+</header>
+
+<main>
+  <div class="card">
+    <h2>1) Posisi Kamu</h2>
+    <div class="grid">
+      <div>
+        <label>CARV yang kamu punya (CARV)</label>
+        <input id="tokenNow" value="0" />
+      </div>
+      <div>
+        <label>WETH yang kamu punya (ETH)</label>
+        <input id="wethNow" value="0" />
+      </div>
+      <div>
+        <label>Target CARV</label>
+        <input id="targetToken" value="9500" />
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>2) Sumber Harga</h2>
+    <div class="grid">
+      <div>
+        <label>DexScreener Pair URL (CARV/WETH — Base)</label>
+        <input id="pairUrl" value="https://dexscreener.com/base/0xff862675c47b6a2c9072dcbe2f37a78a445c4f37" />
+      </div>
+      <div>
+        <label>Refresh interval (detik)</label>
+        <input id="intervalSec" value="15" />
+      </div>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button class="btn" id="refresh">Refresh now</button>
+      <span class="pill" id="status">Idle</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>3) Ringkasan</h2>
+    <div class="kpi">
+      <div class="item"><div class="label">Harga ETH (USD)</div><div class="value" id="kpiEth">$ –</div></div>
+      <div class="item"><div class="label">Harga CARV (USD)</div><div class="value" id="kpiToken">$ –</div></div>
+      <div class="item"><div class="label">1 ETH =</div><div class="value" id="kpiZpe">– CARV</div></div>
+      <div class="item"><div class="label">WETH → CARV (ekuivalen)</div><div class="value" id="kpiWethToken">– CARV</div></div>
+      <div class="item"><div class="label">Total CARV-eq (CARV + WETH→CARV)</div><div class="value" id="kpiTotalToken">– CARV</div></div>
+      <div class="item"><div class="label">Status vs Target</div><div class="value" id="kpiStatus">–</div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>4) Rincian Surplus / Defisit</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Tipe</th>
+          <th>Jumlah (CARV-eq)</th>
+          <th>Nilai (USD/USDT)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="cardrow">
+          <td>Surplus (jika total ≥ target)</td>
+          <td id="tdSurplusToken">–</td>
+          <td id="tdSurplusUsd">$ –</td>
+        </tr>
+        <tr class="cardrow">
+          <td>Defisit / Kekurangan (jika total &lt; target)</td>
+          <td id="tdDeficitToken">–</td>
+          <td id="tdDeficitUsd">$ –</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</main>
+
+<script>
+const $ = (id)=>document.getElementById(id);
+function parseFlex(v){ v=String(v??'').trim().replace(/\s/g,'').replace(',', '.'); if(!v) return NaN; const n=Number(v); return isFinite(n)?n:NaN; }
+function fmt(n,d=6){ if(!isFinite(n)) return '–'; return Number(n).toLocaleString(undefined,{maximumFractionDigits:d}); }
+function setStatus(s){ $('status').textContent=s; }
+
+async function fetchEthUsd(){
+  try{
+    const r = await fetch('https://api.binance.com/api/v3/ticker/price?symbol=ETHUSDT',{cache:'no-store'});
+    const j = await r.json(); const px = Number(j.price);
+    if(!isFinite(px)) throw new Error(); return px;
+  }catch(e){ setStatus('ETH fetch fail'); return NaN; }
+}
+async function fetchTokenUsd(){
+  try{
+    const url = $('pairUrl').value.trim();
+    const u = new URL(url);
+    const [chain,pair] = u.pathname.split('/').filter(Boolean);
+    const r = await fetch(`https://api.dexscreener.com/latest/dex/pairs/${chain}/${pair}`, {cache:'no-store'});
+    const j = await r.json(); const px = Number(j?.pair?.priceUsd);
+    if(isFinite(px)) return px;
+    throw new Error();
+  }catch(e){ setStatus('Token fetch fail'); return NaN; }
+}
+
+function recalc(ethUsd, tokenUsd){
+  const tokenNow = parseFlex($('tokenNow').value);
+  const wethNow  = parseFlex($('wethNow').value);
+  const target   = parseFlex($('targetToken').value);
+  if(![ethUsd,tokenUsd,tokenNow,wethNow,target].every(isFinite)) return;
+
+  const tokenPerEth = ethUsd / tokenUsd;
+  const wethToToken = wethNow * tokenPerEth;
+  const totalTokenEq = tokenNow + wethToToken;
+
+  $('kpiEth').textContent  = '$ ' + fmt(ethUsd,2);
+  $('kpiToken').textContent = '$ ' + fmt(tokenUsd,6);
+  $('kpiZpe').textContent  = fmt(tokenPerEth) + ' CARV';
+  $('kpiWethToken').textContent = fmt(wethToToken) + ' CARV';
+  $('kpiTotalToken').textContent = fmt(totalTokenEq) + ' CARV';
+
+  const diff = totalTokenEq - target;
+  if(diff >= 0){
+    $('kpiStatus').textContent = '✅ CUKUP (≥ target)';
+    $('kpiStatus').className = 'value ok';
+    $('tdSurplusToken').textContent = fmt(diff) + ' CARV';
+    $('tdSurplusUsd').textContent  = '$ ' + fmt(diff * tokenUsd, 2);
+    $('tdDeficitToken').textContent = '–';
+    $('tdDeficitUsd').textContent  = '$ –';
+  }else{
+    $('kpiStatus').textContent = '❌ KURANG (< target)';
+    $('kpiStatus').className = 'value warn';
+    const need = Math.abs(diff);
+    $('tdSurplusToken').textContent = '–';
+    $('tdSurplusUsd').textContent  = '$ –';
+    $('tdDeficitToken').textContent = fmt(need) + ' CARV';
+    $('tdDeficitUsd').textContent  = '$ ' + fmt(need * tokenUsd, 2);
+  }
+}
+
+async function refreshNow(){
+  setStatus('Fetching…');
+  const [eth, token] = await Promise.all([fetchEthUsd(), fetchTokenUsd()]);
+  if(isFinite(eth) && isFinite(token)){
+    setStatus('Live OK');
+    recalc(eth, token);
+  }else setStatus('Fetch fail');
+}
+$('refresh').addEventListener('click', refreshNow);
+
+let timer=null;
+function startAuto(){
+  if(timer) clearInterval(timer);
+  const sec = Math.max(5, parseInt($('intervalSec').value || '15', 10));
+  timer = setInterval(refreshNow, sec*1000);
+}
+$('intervalSec').addEventListener('input', startAuto);
+['tokenNow','wethNow','targetToken'].forEach(id=>$(id).addEventListener('input', refreshNow));
+refreshNow();
+startAuto();
+</script>
+</body>
+</html>
